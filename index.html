@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Seating Chart</title>
+<style>
+:root{--fs:26px;--bg:#f4f5f8;--card:#fff;--ink:#1d2330;--line:#cfd5e1;--ac:#2563eb;--seat:#e8f0ff}
+@media(prefers-color-scheme:dark){:root{--bg:#141821;--card:#1f2532;--ink:#e8ecf3;--line:#3a4357;--seat:#2a3550}}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;height:100vh}
+aside{width:330px;overflow:auto;padding:12px;background:var(--card);border-right:1px solid var(--line)}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+.bar{padding:8px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border-bottom:1px solid var(--line)}
+h3{margin:14px 0 6px;font-size:14px;text-transform:uppercase;letter-spacing:.05em}
+button,select,input,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+button{cursor:pointer}button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+textarea{width:100%;height:110px}input[type=number]{width:60px}
+#wrap{flex:1;overflow:auto;position:relative}
+#board{position:relative;width:1800px;height:1200px;padding-top:0}
+#front{position:absolute;left:0;top:0;width:100%;text-align:center;font-size:12px;letter-spacing:.3em;opacity:.5;border-bottom:2px dashed var(--line)}
+.desk{position:absolute;height:70px;display:flex;border:2px solid var(--line);border-radius:8px;background:var(--card);touch-action:none}
+.edit .desk{cursor:move;outline:2px dashed var(--ac)}
+.seat{flex:1;display:flex;align-items:center;justify-content:center;font-size:var(--fs);font-weight:600;background:var(--seat);margin:3px;border-radius:5px;cursor:pointer;overflow:hidden;white-space:nowrap}
+.seat.e{opacity:.4}.seat.sel{outline:3px solid #f59e0b}
+.x{position:absolute;right:-9px;top:-12px;background:#dc2626;color:#fff;width:20px;height:20px;border-radius:50%;text-align:center;line-height:20px;cursor:pointer;z-index:2}
+.row{display:flex;gap:6px;align-items:center;margin:4px 0;flex-wrap:wrap}
+.stu{border-bottom:1px solid var(--line);padding:4px 0}
+.chip{display:inline-block;background:var(--seat);border-radius:10px;padding:0 6px;margin:2px;font-size:12px;cursor:pointer}
+.empty main .bar button,.empty #wrap{opacity:.4}
+#msg{font-size:13px;color:var(--ac)}
+@media(max-width:800px){body{flex-direction:column;height:auto}aside{width:100%}#wrap{height:70vh}}
+</style></head><body>
+<aside>
+<h3>Class</h3>
+<div class="row"><select id="cls"></select><button id="delc">Delete</button></div>
+<h3>Paste class list</h3>
+<textarea id="paste" placeholder="Class name&#10;&#10;Ada Lovelace&#10;&#10;Alan Turing&#10;&#10;Grace Hopper"></textarea>
+<div class="row"><button class="p" id="go">Save class list</button></div>
+<h3>Setups for this class</h3>
+<div class="row"><select id="lay"></select></div>
+<div class="row"><button id="newl">New</button><button id="renl">Rename</button><button id="dell">Delete</button></div>
+<h3>Add desks</h3>
+<div class="row">Rows <input id="r" type="number" value="3" min="1"> Cols <input id="c" type="number" value="3" min="1"></div>
+<div class="row"><select id="n"><option value="2">Pair tables</option><option value="1">Single desks</option></select><button id="addg">Add grid</button></div>
+<h3>Students</h3>
+<div id="stu"></div>
+<h3>Backup</h3>
+<div class="row"><button id="dl">Download JSON</button><button id="ul">Load JSON</button><input id="file" type="file" accept=".json" hidden></div>
+</aside>
+<main>
+<div class="bar">
+<button class="p" id="rand">Random</button><button id="az">A–Z</button><button id="za">Z–A</button>
+<label><input type="checkbox" id="first" checked> First names</label>
+<label><input type="checkbox" id="showpri"> Show priority</label>
+<label><input type="checkbox" id="edit"> Edit desks</label>
+<label>Size <input type="range" id="fs" min="14" max="44" value="26"></label>
+<span id="msg"></span>
+</div>
+<div id="wrap"><div id="board"></div></div>
+</main>
+<script>
+const W=120,H=70,K='seatingChartV1',$=id=>document.getElementById(id);
+let S=JSON.parse(localStorage.getItem(K)||'null')||{classes:{},cur:null},sel=null;
+const uid=()=>Math.random().toString(36).slice(2,9),save=()=>localStorage.setItem(K,JSON.stringify(S));
+const C=()=>S.classes[S.cur],L=()=>{const c=C();return c&&c.layouts[c.cur]};
+const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const key=(a,b)=>a<b?a+'|'+b:b+'|'+a,msg=t=>{$('msg').textContent=t||''};
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
+const seatsOf=l=>{const a=[];l.desks.forEach(d=>{for(let i=0;i<d.n;i++)a.push({d,i,x:d.x+i*W,y:d.y})});return a};
+function rowsOf(s){const o=[...s].sort((a,b)=>a.y-b.y||a.x-b.x),rows=[];o.forEach(q=>{const r=rows[rows.length-1];if(r&&Math.abs(q.y-r[0].y)<40)r.push(q);else rows.push([q])});rows.forEach(r=>r.sort((a,b)=>a.x-b.x));return rows}
+function neighbors(s){const p=[];rowsOf(s).forEach(r=>{for(let i=1;i<r.length;i++)if(r[i].x-r[i-1].x<=W+40)p.push([r[i-1],r[i]])});return p}
+const sidOf=q=>(L().assign[q.d.id]||[])[q.i]||null;
+function setA(q,v){const a=L().assign;(a[q.d.id]=a[q.d.id]||[null,null])[q.i]=v}
+function curPairs(){return neighbors(seatsOf(L())).map(([a,b])=>[sidOf(a),sidOf(b)]).filter(p=>p[0]&&p[1]).map(p=>key(p[0],p[1]))}
+function addGrid(count,cols,n){const l=L(),pitch=n*W+24,y0=l.desks.length?Math.max(...l.desks.map(d=>d.y))+H+30:30;
+ for(let i=0;i<count;i++)l.desks.push({id:uid(),x:20+(i%cols)*pitch,y:y0+Math.floor(i/cols)*(H+30),n})}
+function fit(){const need=C().students.length-seatsOf(L()).length;if(need>0){const d=Math.ceil(need/2);addGrid(d,Math.min(d,4),2)}}
+function apply(map){const c=C(),l=L(),p=curPairs();if(p.length)c.prev=p;l.assign={};map.forEach((id,q)=>setA(q,id));sel=null;save();draw()}
+function rand(){const c=C();if(!c||!c.students.length)return;fit();const s=seatsOf(L()),nb=neighbors(s),bad=new Set(c.prev||[]);
+ c.students.forEach(t=>(t.apart||[]).forEach(o=>bad.add(key(t.id,o))));
+ const front=[...s].sort((a,b)=>a.y-b.y||a.x-b.x),pri=c.students.filter(t=>t.pri),rest=c.students.filter(t=>!t.pri),fs=front.slice(0,pri.length),ot=front.slice(pri.length);
+ let best=null,bs=1e9;
+ for(let n=0;n<4000&&bs>0;n++){const m=new Map();shuffle(pri.slice()).forEach((t,i)=>m.set(fs[i],t.id));
+  const o=shuffle(ot.slice());shuffle(rest.slice()).forEach((t,i)=>m.set(o[i],t.id));
+  const sc=nb.filter(([a,b])=>{const x=m.get(a),y=m.get(b);return x&&y&&bad.has(key(x,y))}).length;
+  if(sc<bs){bs=sc;best=m}}
+ apply(best);msg(bs?`Best effort: ${bs} conflict(s) remain (not enough room to avoid all).`:'Done: no repeat or blocked neighbors.')}
+function sortSeats(rev){const c=C();if(!c||!c.students.length)return;fit();
+ const st=[...c.students].sort((a,b)=>a.name.localeCompare(b.name));if(rev)st.reverse();
+ const m=new Map();rowsOf(seatsOf(L())).flat().forEach((q,i)=>{if(st[i])m.set(q,st[i].id)});apply(m);msg('')}
+function newClassLayout(c,name){c.layouts[name]={desks:[],assign:{}};c.cur=name}
+function draw(){
+ $('cls').innerHTML=Object.keys(S.classes).map(k=>`<option ${k===S.cur?'selected':''}>${esc(k)}</option>`).join('');
+ const c=C();document.body.classList.toggle('empty',!c);
+ if(!c){$('board').innerHTML='<div id="front">FRONT OF ROOM</div><p style="padding:60px 20px">Paste a class list (class name on the first line, then student names) to begin.</p>';$('stu').innerHTML='';$('lay').innerHTML='';return}
+ $('lay').innerHTML=Object.keys(c.layouts).map(k=>`<option ${k===c.cur?'selected':''}>${esc(k)}</option>`).join('');
+ const l=L(),by=Object.fromEntries(c.students.map(t=>[t.id,t])),ed=$('edit').checked,fn=$('first').checked,sp=$('showpri').checked;
+ document.body.classList.toggle('edit',ed);
+ $('board').innerHTML='<div id="front">FRONT OF ROOM</div>'+l.desks.map(d=>`<div class="desk" data-d="${d.id}" style="left:${d.x}px;top:${d.y}px;width:${d.n*W}px">${ed?`<b class="x" data-x="${d.id}">×</b>`:''}${[...Array(d.n).keys()].map(i=>{const t=by[(l.assign[d.id]||[])[i]];
+  return `<div class="seat${t?'':' e'}${sel&&sel.d===d.id&&sel.i===i?' sel':''}" data-d="${d.id}" data-i="${i}">${t?esc(fn?t.name.split(/\s+/)[0]:t.name)+(sp&&t.pri?' ★':''):''}</div>`}).join('')}</div>`).join('');
+ $('stu').innerHTML=c.students.map(t=>`<div class="stu"><div class="row"><b>${esc(t.name)}</b><label><input type="checkbox" data-p="${t.id}" ${t.pri?'checked':''}> priority</label></div>
+  <div class="row"><select data-a="${t.id}"><option value="">Can't sit beside…</option>${c.students.filter(o=>o.id!==t.id&&!(t.apart||[]).includes(o.id)).map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join('')}</select>
+  ${(t.apart||[]).map(o=>by[o]?`<span class="chip" data-r="${t.id}|${o}">${esc(by[o].name)} ×</span>`:'').join('')}</div></div>`).join('');
+}
+$('go').onclick=()=>{const ls=$('paste').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+ if(ls.length<2)return msg('Needs a class name plus at least one student.');
+ const name=ls[0],old=S.classes[name],stu=ls.slice(1).map(n=>(old&&old.students.find(t=>t.name===n))||{id:uid(),name:n,pri:false,apart:[]});
+ const c=old||{students:[],layouts:{},cur:null,prev:[]};c.students=stu;S.classes[name]=c;S.cur=name;
+ if(!c.cur)newClassLayout(c,'Setup 1');fit();$('paste').value='';save();draw();msg(`Saved "${name}" with ${stu.length} students.`)};
+$('cls').onchange=e=>{S.cur=e.target.value;sel=null;save();draw()};
+$('lay').onchange=e=>{C().cur=e.target.value;sel=null;save();draw()};
+$('delc').onclick=()=>{if(C()&&confirm(`Delete class "${S.cur}" and its setups?`)){delete S.classes[S.cur];S.cur=Object.keys(S.classes)[0]||null;save();draw()}};
+$('newl').onclick=()=>{const c=C();if(!c)return;const n=prompt('Name for the new setup:','Setup '+(Object.keys(c.layouts).length+1));if(!n||c.layouts[n])return;newClassLayout(c,n);fit();save();draw()};
+$('renl').onclick=()=>{const c=C();if(!c)return;const n=prompt('Rename setup:',c.cur);if(!n||n===c.cur||c.layouts[n])return;c.layouts[n]=c.layouts[c.cur];delete c.layouts[c.cur];c.cur=n;save();draw()};
+$('dell').onclick=()=>{const c=C();if(!c||Object.keys(c.layouts).length<2)return msg('A class needs at least one setup.');if(confirm(`Delete setup "${c.cur}"?`)){delete c.layouts[c.cur];c.cur=Object.keys(c.layouts)[0];save();draw()}};
+$('addg').onclick=()=>{if(!C())return;const r=+$('r').value||1,cc=+$('c').value||1;addGrid(r*cc,cc,+$('n').value);save();draw()};
+$('rand').onclick=rand;$('az').onclick=()=>sortSeats(0);$('za').onclick=()=>sortSeats(1);
+['first','showpri','edit'].forEach(i=>$(i).onchange=draw);
+$('fs').oninput=e=>document.documentElement.style.setProperty('--fs',e.target.value+'px');
+$('stu').onchange=e=>{const c=C(),t=e.target;if(t.dataset.p){c.students.find(s=>s.id===t.dataset.p).pri=t.checked}
+ else if(t.dataset.a&&t.value){const a=c.students.find(s=>s.id===t.dataset.a),b=c.students.find(s=>s.id===t.value);a.apart=[...(a.apart||[]),b.id];b.apart=[...(b.apart||[]),a.id]}
+ save();draw()};
+$('stu').onclick=e=>{const r=e.target.dataset.r;if(!r)return;const[a,b]=r.split('|'),c=C(),A=c.students.find(s=>s.id===a),B=c.students.find(s=>s.id===b);
+ A.apart=A.apart.filter(x=>x!==b);if(B)B.apart=(B.apart||[]).filter(x=>x!==a);save();draw()};
+$('board').onclick=e=>{const l=L();if(!l)return;
+ if(e.target.dataset.x){l.desks=l.desks.filter(d=>d.id!==e.target.dataset.x);delete l.assign[e.target.dataset.x];save();draw();return}
+ const s=e.target.closest('.seat');if(!s||$('edit').checked)return;const q={d:s.dataset.d,i:+s.dataset.i};
+ if(!sel){sel=q}else{const get=z=>(l.assign[z.d]||[null,null])[z.i]||null,set=(z,v)=>(l.assign[z.d]=l.assign[z.d]||[null,null])[z.i]=v;
+  if(!(sel.d===q.d&&sel.i===q.i)){const a=get(sel),b=get(q);set(sel,b);set(q,a);save()}sel=null}
+ draw()};
+let drag=null;
+$('board').onpointerdown=e=>{if(!$('edit').checked||e.target.dataset.x)return;const d=e.target.closest('.desk');if(!d)return;
+ const o=L().desks.find(x=>x.id===d.dataset.d);drag={o,el:d,sx:e.clientX,sy:e.clientY,ox:o.x,oy:o.y};e.preventDefault()};
+addEventListener('pointermove',e=>{if(!drag)return;drag.el.style.left=Math.max(0,drag.ox+e.clientX-drag.sx)+'px';drag.el.style.top=Math.max(26,drag.oy+e.clientY-drag.sy)+'px'});
+addEventListener('pointerup',e=>{if(!drag)return;const sn=v=>Math.round(v/10)*10;
+ drag.o.x=sn(Math.max(0,drag.ox+e.clientX-drag.sx));drag.o.y=sn(Math.max(30,drag.oy+e.clientY-drag.sy));drag=null;save();draw()});
+$('dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:'application/json'}));a.download='seating-chart.json';a.click()};
+$('ul').onclick=()=>$('file').click();
+$('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.classes)throw 0;
+ if(confirm('Replace all current data with this file?')){S=d;if(!S.cur||!S.classes[S.cur])S.cur=Object.keys(S.classes)[0]||null;save();draw()}}catch(x){msg('That file is not a valid seating chart JSON.')}};r.readAsText(f);e.target.value=''};
+draw();
+</script></body></html>
