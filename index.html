@@ -45,11 +45,12 @@ body.present #exit{display:block}#exit:hover{opacity:1}
 <h3>Add desks</h3>
 <div class="row">Rows <input id="r" type="number" value="3" min="1"> Cols <input id="c" type="number" value="3" min="1"></div>
 <div class="row"><select id="n"><option value="2">Pair tables</option><option value="1">Single desks</option></select><button id="addg">Add grid</button></div>
+<div class="row">Desk width <input id="dw" type="range" min="90" max="320" step="10" value="120"><button id="autow">Fit to names</button></div>
 <h3>Priority seating</h3>
 <div class="row"><select id="pmode"><option value="r1">Random in front row</option><option value="r2">Random in first two rows</option><option value="seats">Labeled priority seats</option></select></div>
 <div class="row"><label><input type="checkbox" id="lblps"> Label priority seats (click seats)</label></div>
 <h3>Students</h3>
-<div id="stu"></div>
+<div id="stu"></div><div class="row"><button id="adds">+ Add student</button></div>
 <h3>Backup</h3>
 <div class="row"><button id="dl">Download JSON</button><button id="ul">Load JSON</button><input id="file" type="file" accept=".json" hidden></div>
 </aside>
@@ -66,18 +67,18 @@ body.present #exit{display:block}#exit:hover{opacity:1}
 </main>
 <button id="exit">Exit ✕</button>
 <script>
-const W=120,H=70,K='seatingChartV1',$=id=>document.getElementById(id);
+let W=120;const H=70,K='seatingChartV1',$=id=>document.getElementById(id);
 let S=JSON.parse(localStorage.getItem(K)||'null')||{classes:{},cur:null},sel=null,Z=1,srcSel=null;
-const nm=t=>(t.first+' '+t.last).trim();
+const nm=t=>(t.first+' '+t.last).trim(),disp=t=>{const b=t.nick||t.first;return $('first').checked?b:(b+' '+t.last).trim()};
 function parseName(s,m){let f,l;if(m==='lf'&&s.includes(',')){[l,f]=s.split(/,(.*)/).map(x=>x.trim())}else{const p=s.split(/\s+/);l=p.length>1?p.pop():'';f=p.join(' ')}return{first:f,last:l}}
 function migrate(){Object.values(S.classes).forEach(c=>c.students.forEach(t=>{if(t.first===undefined){Object.assign(t,parseName(t.name||'','fl'));delete t.name}}))}
 migrate();
 const uid=()=>Math.random().toString(36).slice(2,9),save=()=>localStorage.setItem(K,JSON.stringify(S));
-const C=()=>S.classes[S.cur],L=()=>{const c=C();return c&&c.layouts[c.cur]};
+const C=()=>S.classes[S.cur],L=()=>{const c=C(),l=c&&c.layouts[c.cur];if(l)W=l.w||120;return l};
 const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 const key=(a,b)=>a<b?a+'|'+b:b+'|'+a,msg=t=>{$('msg').textContent=t||''};
 const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
-const seatsOf=l=>{const a=[];l.desks.forEach(d=>{for(let i=0;i<d.n;i++)a.push({d,i,x:d.x+i*W,y:d.y})});return a};
+const seatsOf=l=>{W=l.w||120;const a=[];l.desks.forEach(d=>{for(let i=0;i<d.n;i++)a.push({d,i,x:d.x+i*W,y:d.y})});return a};
 function rowsOf(s){const o=[...s].sort((a,b)=>a.y-b.y||a.x-b.x),rows=[];o.forEach(q=>{const r=rows[rows.length-1];if(r&&Math.abs(q.y-r[0].y)<40)r.push(q);else rows.push([q])});rows.forEach(r=>r.sort((a,b)=>a.x-b.x));return rows}
 function neighbors(s){const p=[];rowsOf(s).forEach(r=>{for(let i=1;i<r.length;i++)if(r[i].x-r[i-1].x<=W+40)p.push([r[i-1],r[i]])});return p}
 const sidOf=q=>(L().assign[q.d.id]||[])[q.i]||null;
@@ -111,11 +112,11 @@ function draw(){
  if(!c){$('board').innerHTML='<div id="front">FRONT OF ROOM</div><p style="padding:60px 20px">Paste a class list (class name on the first line, then student names) to begin.</p>';$('stu').innerHTML='';$('lay').innerHTML='';return}
  $('lay').innerHTML=Object.keys(c.layouts).map(k=>`<option ${k===c.cur?'selected':''}>${esc(k)}</option>`).join('');
  const ks=Object.keys(c.layouts);if(!c.layouts[srcSel])srcSel=ks.find(k=>k!==c.cur)||c.cur;$('src').innerHTML=ks.map(k=>`<option ${k===srcSel?'selected':''}>${esc(k)}</option>`).join('');
- const l=L(),by=Object.fromEntries(c.students.map(t=>[t.id,t])),pr=document.body.classList.contains('present'),ed=$('edit').checked&&!pr,fn=$('first').checked,sp=$('showpri').checked&&!pr,ps=l.ps||{},sP=!pr&&($('lblps').checked||sp);
+ const l=L(),_w=($('dw').value=W),by=Object.fromEntries(c.students.map(t=>[t.id,t])),pr=document.body.classList.contains('present'),ed=$('edit').checked&&!pr,fn=$('first').checked,sp=$('showpri').checked&&!pr,ps=l.ps||{},sP=!pr&&($('lblps').checked||sp);
  document.body.classList.toggle('edit',ed);
  $('board').innerHTML='<div id="front">FRONT OF ROOM</div>'+l.desks.map(d=>`<div class="desk" data-d="${d.id}" style="left:${d.x}px;top:${d.y}px;width:${d.n*W}px">${ed?`<b class="x" data-x="${d.id}">×</b>`:''}${[...Array(d.n).keys()].map(i=>{const t=by[(l.assign[d.id]||[])[i]];
-  return `<div class="seat${t?'':' e'}${sel&&sel.d===d.id&&sel.i===i?' sel':''}${sP&&ps[d.id+':'+i]?' ps':''}" data-d="${d.id}" data-i="${i}">${t?esc(fn?t.first:nm(t))+(sp&&t.pri?' ★':''):''}</div>`}).join('')}</div>`).join('');
- $('stu').innerHTML=c.students.map(t=>`<div class="stu"><div class="row"><b>${esc(nm(t))}</b><label><input type="checkbox" data-p="${t.id}" ${t.pri?'checked':''}> priority</label></div>
+  return `<div class="seat${t?'':' e'}${sel&&sel.d===d.id&&sel.i===i?' sel':''}${sP&&ps[d.id+':'+i]?' ps':''}" data-d="${d.id}" data-i="${i}">${t?esc(disp(t))+(sp&&t.pri?' ★':''):''}</div>`}).join('')}</div>`).join('');
+ $('stu').innerHTML=c.students.map(t=>`<div class="stu"><div class="row"><input data-f="first" data-i="${t.id}" value="${esc(t.first)}" placeholder="First" size="7"><input data-f="last" data-i="${t.id}" value="${esc(t.last)}" placeholder="Last" size="7"><input data-f="nick" data-i="${t.id}" value="${esc(t.nick||'')}" placeholder="Nickname" size="7"><span class="chip" data-del="${t.id}" title="Remove student">🗑</span><label><input type="checkbox" data-p="${t.id}" ${t.pri?'checked':''}> priority</label></div>
   <div class="row"><select data-a="${t.id}"><option value="">Can't sit beside…</option>${c.students.filter(o=>o.id!==t.id&&!(t.apart||[]).includes(o.id)).map(o=>`<option value="${o.id}">${esc(nm(o))}</option>`).join('')}</select>
   ${(t.apart||[]).map(o=>by[o]?`<span class="chip" data-r="${t.id}|${o}">${esc(nm(by[o]))} ×</span>`:'').join('')}</div></div>`).join('');
 }
@@ -134,10 +135,10 @@ $('addg').onclick=()=>{if(!C())return;const r=+$('r').value||1,cc=+$('c').value|
 $('rand').onclick=rand;$('az').onclick=()=>sortSeats(0);$('za').onclick=()=>sortSeats(1);
 ['first','showpri','edit'].forEach(i=>$(i).onchange=draw);
 $('fs').oninput=e=>document.documentElement.style.setProperty('--fs',e.target.value+'px');
-$('stu').onchange=e=>{const c=C(),t=e.target;if(t.dataset.p){c.students.find(s=>s.id===t.dataset.p).pri=t.checked}
+$('stu').onchange=e=>{const c=C(),t=e.target;if(t.dataset.f){const q=c.students.find(s=>s.id===t.dataset.i),v=t.value.trim();if(t.dataset.f!=='first'||v)q[t.dataset.f]=v}else if(t.dataset.p){c.students.find(s=>s.id===t.dataset.p).pri=t.checked}
  else if(t.dataset.a&&t.value){const a=c.students.find(s=>s.id===t.dataset.a),b=c.students.find(s=>s.id===t.value);a.apart=[...(a.apart||[]),b.id];b.apart=[...(b.apart||[]),a.id]}
  save();draw()};
-$('stu').onclick=e=>{const r=e.target.dataset.r;if(!r)return;const[a,b]=r.split('|'),c=C(),A=c.students.find(s=>s.id===a),B=c.students.find(s=>s.id===b);
+$('stu').onclick=e=>{const dl=e.target.dataset.del;if(dl){const c=C(),t=c.students.find(s=>s.id===dl);if(!confirm('Remove '+nm(t)+' from this class?'))return;c.students=c.students.filter(s=>s.id!==dl);c.students.forEach(s=>s.apart=(s.apart||[]).filter(x=>x!==dl));Object.values(c.layouts).forEach(l=>Object.values(l.assign).forEach(a=>a.forEach((v,i)=>{if(v===dl)a[i]=null})));save();draw();return}const r=e.target.dataset.r;if(!r)return;const[a,b]=r.split('|'),c=C(),A=c.students.find(s=>s.id===a),B=c.students.find(s=>s.id===b);
  A.apart=A.apart.filter(x=>x!==b);if(B)B.apart=(B.apart||[]).filter(x=>x!==a);save();draw()};
 $('board').onclick=e=>{const l=L();if(!l)return;
  if(e.target.dataset.x){l.desks=l.desks.filter(d=>d.id!==e.target.dataset.x);delete l.assign[e.target.dataset.x];save();draw();return}
@@ -170,5 +171,11 @@ function unpres(){if(!document.body.classList.contains('present'))return;documen
 $('exit').onclick=unpres;addEventListener('keydown',e=>{if(e.key==='Escape')unpres()});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)unpres()});
 addEventListener('resize',()=>{if(document.body.classList.contains('present'))fitZ()});
+function setW(nw){const l=L();if(!l)return;const r=nw/W;l.desks.forEach(d=>d.x=Math.round(d.x*r/10)*10);l.w=nw;W=nw;save();draw()}
+$('dw').onchange=e=>setW(+e.target.value);
+$('autow').onclick=()=>{const c=C();if(!c)return;const x=document.createElement('canvas').getContext('2d');x.font=`600 ${$('fs').value}px system-ui,sans-serif`;
+ let m=0;c.students.forEach(t=>m=Math.max(m,x.measureText(disp(t)+($('showpri').checked?' ★':'')).width));setW(Math.min(400,Math.max(90,Math.ceil((m+26)/10)*10)))};
+$('adds').onclick=()=>{const c=C();if(!c)return;const n=prompt('New student name (format follows the "Names as" setting):');if(!n||!n.trim())return;
+ c.students.push({id:uid(),...parseName(n.trim(),$('nfmt').value),pri:false,apart:[]});fit();save();draw()};
 draw();
 </script></body></html>
