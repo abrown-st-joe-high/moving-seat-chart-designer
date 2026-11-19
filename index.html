@@ -32,6 +32,8 @@ body.present aside,body.present .bar,body.present #front{display:none}
 body.present #wrap{position:fixed;inset:0;background:var(--bg);overflow:hidden}
 #exit{display:none;position:fixed;top:6px;right:8px;z-index:9;opacity:.15}
 body.present #exit{display:block}#exit:hover{opacity:1}
+.desk.sel2{outline:3px solid #f59e0b}.marq{position:absolute;border:1px dashed var(--ac);background:rgba(37,99,235,.15);pointer-events:none;z-index:5}
+.edit #board{cursor:crosshair;touch-action:none}
 </style></head><body>
 <aside>
 <h3>Class</h3>
@@ -44,8 +46,11 @@ body.present #exit{display:block}#exit:hover{opacity:1}
 <div class="row"><button id="newl">New</button><button id="renl">Rename</button><button id="dell">Delete</button></div>
 <h3>Add desks</h3>
 <div class="row">Rows <input id="r" type="number" value="3" min="1"> Cols <input id="c" type="number" value="3" min="1"></div>
-<div class="row"><select id="n"><option value="2">Pair tables</option><option value="1">Single desks</option></select><button id="addg">Add grid</button></div>
+<div class="row"><select id="n"><option value="2">Pair tables</option><option value="1">Single desks</option><option value="v2">Vertical pair tables</option></select><button id="addg">Add grid</button></div>
 <div class="row">Desk width <input id="dw" type="range" min="90" max="320" step="10" value="120"><button id="autow">Fit to names</button></div>
+<div class="row"><button id="selall">Select all</button><button id="delsel">Delete selected</button></div>
+<div class="row">Rotate selected <input id="deg" type="number" value="90" step="5" style="width:70px">°<button id="rot">Rotate</button><button id="rot0">Reset</button></div>
+<div class="row" style="font-size:12px;opacity:.7">With "Edit desks" on: drag on empty space to select tables, then drag any selected table to move them all. Shift-click adds or removes tables.</div>
 <h3>Priority seating</h3>
 <div class="row"><select id="pmode"><option value="r1">Random in front row</option><option value="r2">Random in first two rows</option><option value="seats">Labeled priority seats</option></select></div>
 <div class="row"><label><input type="checkbox" id="lblps"> Label priority seats (click seats)</label></div>
@@ -57,7 +62,7 @@ body.present #exit{display:block}#exit:hover{opacity:1}
 <main>
 <div class="bar">
 <button class="p" id="rand">Random</button><button id="az">A–Z</button><button id="za">Z–A</button><select id="sortby"><option value="last">by last name</option><option value="first">by first name</option></select><label>Flip from <select id="src"></select></label><button id="flip">Flip front/back</button>
-<label><input type="checkbox" id="first" checked> First names</label>
+<label><input type="checkbox" id="first" checked> First names</label><label><input type="checkbox" id="linit"> Last initial</label>
 <label><input type="checkbox" id="showpri"> Show priority</label>
 <label><input type="checkbox" id="edit"> Edit desks</label>
 <label>Names <input type="range" id="fs" min="14" max="44" value="26"></label><label>Zoom <input type="range" id="zm" min="0.3" max="3" step="0.05" value="1"></label><button id="fit">Fit</button><button class="p" id="pres">Show students</button>
@@ -69,7 +74,7 @@ body.present #exit{display:block}#exit:hover{opacity:1}
 <script>
 let W=120;const H=70,K='seatingChartV1',$=id=>document.getElementById(id);
 let S=JSON.parse(localStorage.getItem(K)||'null')||{classes:{},cur:null},sel=null,Z=1,srcSel=null;
-const nm=t=>(t.first+' '+t.last).trim(),disp=t=>{const b=t.nick||t.first;return $('first').checked?b:(b+' '+t.last).trim()};
+const nm=t=>(t.first+' '+t.last).trim(),disp=t=>{const b=t.nick||t.first;if(!$('first').checked)return(b+' '+t.last).trim();return $('linit').checked&&t.last?b+' '+t.last[0].toUpperCase()+'.':b};
 function parseName(s,m){let f,l;if(m==='lf'&&s.includes(',')){[l,f]=s.split(/,(.*)/).map(x=>x.trim())}else{const p=s.split(/\s+/);l=p.length>1?p.pop():'';f=p.join(' ')}return{first:f,last:l}}
 function migrate(){Object.values(S.classes).forEach(c=>c.students.forEach(t=>{if(t.first===undefined){Object.assign(t,parseName(t.name||'','fl'));delete t.name}}))}
 migrate();
@@ -78,14 +83,16 @@ const C=()=>S.classes[S.cur],L=()=>{const c=C(),l=c&&c.layouts[c.cur];if(l)W=l.w
 const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 const key=(a,b)=>a<b?a+'|'+b:b+'|'+a,msg=t=>{$('msg').textContent=t||''};
 const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
-const seatsOf=l=>{W=l.w||120;const a=[];l.desks.forEach(d=>{for(let i=0;i<d.n;i++)a.push({d,i,x:d.x+i*W,y:d.y})});return a};
+const dsz=d=>d.v?[W,d.n*H]:[d.n*W,H];
+const seatsOf=l=>{W=l.w||120;const a=[];l.desks.forEach(d=>{const[w,h]=dsz(d),cx=d.x+w/2,cy=d.y+h/2,t=(d.r||0)*Math.PI/180,c=Math.cos(t),s=Math.sin(t);
+ for(let i=0;i<d.n;i++){const lx=d.v?0:(i+.5)*W-w/2,ly=d.v?(i+.5)*H-h/2:0;a.push({d,i,x:cx+lx*c-ly*s,y:cy+lx*s+ly*c})}});return a};
 function rowsOf(s){const o=[...s].sort((a,b)=>a.y-b.y||a.x-b.x),rows=[];o.forEach(q=>{const r=rows[rows.length-1];if(r&&Math.abs(q.y-r[0].y)<40)r.push(q);else rows.push([q])});rows.forEach(r=>r.sort((a,b)=>a.x-b.x));return rows}
 function neighbors(s){const p=[];rowsOf(s).forEach(r=>{for(let i=1;i<r.length;i++)if(r[i].x-r[i-1].x<=W+40)p.push([r[i-1],r[i]])});return p}
 const sidOf=q=>(L().assign[q.d.id]||[])[q.i]||null;
 function setA(q,v){const a=L().assign;(a[q.d.id]=a[q.d.id]||[null,null])[q.i]=v}
 function curPairs(){return neighbors(seatsOf(L())).map(([a,b])=>[sidOf(a),sidOf(b)]).filter(p=>p[0]&&p[1]).map(p=>key(p[0],p[1]))}
-function addGrid(count,cols,n){const l=L(),pitch=n*W+24,y0=l.desks.length?Math.max(...l.desks.map(d=>d.y))+H+30:30;
- for(let i=0;i<count;i++)l.desks.push({id:uid(),x:20+(i%cols)*pitch,y:y0+Math.floor(i/cols)*(H+30),n})}
+function addGrid(count,cols,n,v){const l=L(),[w,h]=dsz({n,v}),y0=l.desks.length?Math.max(...l.desks.map(d=>d.y+dsz(d)[1]))+30:30;
+ for(let i=0;i<count;i++){const o={id:uid(),x:20+(i%cols)*(w+24),y:y0+Math.floor(i/cols)*(h+30),n};if(v)o.v=1;l.desks.push(o)}}
 function fit(){const need=C().students.length-seatsOf(L()).length;if(need>0){const d=Math.ceil(need/2);addGrid(d,Math.min(d,4),2)}}
 function apply(map){const c=C(),l=L(),p=curPairs();if(p.length)c.prev=p;l.assign={};map.forEach((id,q)=>setA(q,id));sel=null;save();draw()}
 function seatsPlan(s,k){const rows=rowsOf(s),ps=L().ps||{},m=$('pmode').value,flat=rows.flat();
@@ -114,8 +121,8 @@ function draw(){
  const ks=Object.keys(c.layouts);if(!c.layouts[srcSel])srcSel=ks.find(k=>k!==c.cur)||c.cur;$('src').innerHTML=ks.map(k=>`<option ${k===srcSel?'selected':''}>${esc(k)}</option>`).join('');
  const l=L(),_w=($('dw').value=W),by=Object.fromEntries(c.students.map(t=>[t.id,t])),pr=document.body.classList.contains('present'),ed=$('edit').checked&&!pr,fn=$('first').checked,sp=$('showpri').checked&&!pr,ps=l.ps||{},sP=!pr&&($('lblps').checked||sp);
  document.body.classList.toggle('edit',ed);
- $('board').innerHTML='<div id="front">FRONT OF ROOM</div>'+l.desks.map(d=>`<div class="desk" data-d="${d.id}" style="left:${d.x}px;top:${d.y}px;width:${d.n*W}px">${ed?`<b class="x" data-x="${d.id}">×</b>`:''}${[...Array(d.n).keys()].map(i=>{const t=by[(l.assign[d.id]||[])[i]];
-  return `<div class="seat${t?'':' e'}${sel&&sel.d===d.id&&sel.i===i?' sel':''}${sP&&ps[d.id+':'+i]?' ps':''}" data-d="${d.id}" data-i="${i}">${t?esc(disp(t))+(sp&&t.pri?' ★':''):''}</div>`}).join('')}</div>`).join('');
+ $('board').innerHTML='<div id="front">FRONT OF ROOM</div>'+l.desks.map(d=>`<div class="desk${ed&&selD.has(d.id)?' sel2':''}" data-d="${d.id}" style="left:${d.x}px;top:${d.y}px;width:${dsz(d)[0]}px;height:${dsz(d)[1]}px;${d.v?'flex-direction:column;':''}${d.r?`transform:rotate(${d.r}deg);`:''}">${ed?`<b class="x" data-x="${d.id}">×</b>`:''}${[...Array(d.n).keys()].map(i=>{const t=by[(l.assign[d.id]||[])[i]];
+  return `<div class="seat${t?'':' e'}${sel&&sel.d===d.id&&sel.i===i?' sel':''}${sP&&ps[d.id+':'+i]?' ps':''}" data-d="${d.id}" data-i="${i}">${t?`<span style="display:inline-block;transform:rotate(${-(d.r||0)}deg)">${esc(disp(t))}${sp&&t.pri?' ★':''}</span>`:''}</div>`}).join('')}</div>`).join('');
  $('stu').innerHTML=c.students.map(t=>`<div class="stu"><div class="row"><input data-f="first" data-i="${t.id}" value="${esc(t.first)}" placeholder="First" size="7"><input data-f="last" data-i="${t.id}" value="${esc(t.last)}" placeholder="Last" size="7"><input data-f="nick" data-i="${t.id}" value="${esc(t.nick||'')}" placeholder="Nickname" size="7"><span class="chip" data-del="${t.id}" title="Remove student">🗑</span><label><input type="checkbox" data-p="${t.id}" ${t.pri?'checked':''}> priority</label></div>
   <div class="row"><select data-a="${t.id}"><option value="">Can't sit beside…</option>${c.students.filter(o=>o.id!==t.id&&!(t.apart||[]).includes(o.id)).map(o=>`<option value="${o.id}">${esc(nm(o))}</option>`).join('')}</select>
   ${(t.apart||[]).map(o=>by[o]?`<span class="chip" data-r="${t.id}|${o}">${esc(nm(by[o]))} ×</span>`:'').join('')}</div></div>`).join('');
@@ -131,9 +138,9 @@ $('delc').onclick=()=>{if(C()&&confirm(`Delete class "${S.cur}" and its setups?`
 $('newl').onclick=()=>{const c=C();if(!c)return;const n=prompt('Name for the new setup:','Setup '+(Object.keys(c.layouts).length+1));if(!n||c.layouts[n])return;newClassLayout(c,n);fit();save();draw()};
 $('renl').onclick=()=>{const c=C();if(!c)return;const n=prompt('Rename setup:',c.cur);if(!n||n===c.cur||c.layouts[n])return;c.layouts[n]=c.layouts[c.cur];delete c.layouts[c.cur];c.cur=n;save();draw()};
 $('dell').onclick=()=>{const c=C();if(!c||Object.keys(c.layouts).length<2)return msg('A class needs at least one setup.');if(confirm(`Delete setup "${c.cur}"?`)){delete c.layouts[c.cur];c.cur=Object.keys(c.layouts)[0];save();draw()}};
-$('addg').onclick=()=>{if(!C())return;const r=+$('r').value||1,cc=+$('c').value||1;addGrid(r*cc,cc,+$('n').value);save();draw()};
+$('addg').onclick=()=>{if(!C())return;const r=+$('r').value||1,cc=+$('c').value||1;const tp=$('n').value;addGrid(r*cc,cc,tp==='v2'?2:+tp,tp==='v2');save();draw()};
 $('rand').onclick=rand;$('az').onclick=()=>sortSeats(0);$('za').onclick=()=>sortSeats(1);
-['first','showpri','edit'].forEach(i=>$(i).onchange=draw);
+['first','linit','showpri','edit'].forEach(i=>$(i).onchange=draw);
 $('fs').oninput=e=>document.documentElement.style.setProperty('--fs',e.target.value+'px');
 $('stu').onchange=e=>{const c=C(),t=e.target;if(t.dataset.f){const q=c.students.find(s=>s.id===t.dataset.i),v=t.value.trim();if(t.dataset.f!=='first'||v)q[t.dataset.f]=v}else if(t.dataset.p){c.students.find(s=>s.id===t.dataset.p).pri=t.checked}
  else if(t.dataset.a&&t.value){const a=c.students.find(s=>s.id===t.dataset.a),b=c.students.find(s=>s.id===t.value);a.apart=[...(a.apart||[]),b.id];b.apart=[...(b.apart||[]),a.id]}
@@ -148,12 +155,21 @@ $('board').onclick=e=>{const l=L();if(!l)return;
  if(!sel){sel=q}else{const get=z=>(l.assign[z.d]||[null,null])[z.i]||null,set=(z,v)=>(l.assign[z.d]=l.assign[z.d]||[null,null])[z.i]=v;
   if(!(sel.d===q.d&&sel.i===q.i)){const a=get(sel),b=get(q);set(sel,b);set(q,a);save()}sel=null}
  draw()};
-let drag=null;
-$('board').onpointerdown=e=>{if(!$('edit').checked||e.target.dataset.x)return;const d=e.target.closest('.desk');if(!d)return;
- const o=L().desks.find(x=>x.id===d.dataset.d);drag={o,el:d,sx:e.clientX,sy:e.clientY,ox:o.x,oy:o.y};e.preventDefault()};
-addEventListener('pointermove',e=>{if(!drag)return;drag.el.style.left=Math.max(0,drag.ox+(e.clientX-drag.sx)/Z)+'px';drag.el.style.top=Math.max(26,drag.oy+(e.clientY-drag.sy)/Z)+'px'});
-addEventListener('pointerup',e=>{if(!drag)return;const sn=v=>Math.round(v/10)*10;
- drag.o.x=sn(Math.max(0,drag.ox+(e.clientX-drag.sx)/Z));drag.o.y=sn(Math.max(30,drag.oy+(e.clientY-drag.sy)/Z));drag=null;save();draw()});
+let drag=null,selD=new Set();
+const hl=()=>document.querySelectorAll('#board .desk').forEach(el=>el.classList.toggle('sel2',selD.has(el.dataset.d)&&$('edit').checked));
+const bpt=e=>{const r=$('board').getBoundingClientRect();return[(e.clientX-r.left)/Z,(e.clientY-r.top)/Z]};
+$('board').onpointerdown=e=>{if(!$('edit').checked||e.target.dataset.x)return;const l=L();if(!l)return;const dk=e.target.closest('.desk');
+ if(dk){const id=dk.dataset.d;if(e.shiftKey){selD.has(id)?selD.delete(id):selD.add(id)}else if(!selD.has(id))selD=new Set([id]);hl();
+  drag={t:'m',sx:e.clientX,sy:e.clientY,items:l.desks.filter(d=>selD.has(d.id)).map(o=>({o,el:$('board').querySelector(`.desk[data-d="${o.id}"]`),ox:o.x,oy:o.y}))}}
+ else{const[x,y]=bpt(e);if(!e.shiftKey)selD=new Set();const m=document.createElement('div');m.className='marq';$('board').appendChild(m);drag={t:'s',x0:x,y0:y,m};hl()}
+ e.preventDefault()};
+addEventListener('pointermove',e=>{if(!drag)return;
+ if(drag.t==='m'){const dx=(e.clientX-drag.sx)/Z,dy=(e.clientY-drag.sy)/Z;drag.items.forEach(i=>{i.el.style.left=Math.max(0,i.ox+dx)+'px';i.el.style.top=Math.max(30,i.oy+dy)+'px'})}
+ else{const[x,y]=bpt(e),q=drag.m.style;q.left=Math.min(x,drag.x0)+'px';q.top=Math.min(y,drag.y0)+'px';q.width=Math.abs(x-drag.x0)+'px';q.height=Math.abs(y-drag.y0)+'px'}});
+addEventListener('pointerup',e=>{if(!drag)return;const d=drag;drag=null;
+ if(d.t==='m'){const sn=v=>Math.round(v/10)*10,dx=sn((e.clientX-d.sx)/Z),dy=sn((e.clientY-d.sy)/Z);d.items.forEach(i=>{i.o.x=Math.max(0,i.ox+dx);i.o.y=Math.max(30,i.oy+dy)});save();draw()}
+ else{const[x,y]=bpt(e),a=[Math.min(x,d.x0),Math.min(y,d.y0),Math.max(x,d.x0),Math.max(y,d.y0)];d.m.remove();
+  L().desks.forEach(o=>{const z=dsz(o);if(o.x<a[2]&&o.x+z[0]>a[0]&&o.y<a[3]&&o.y+z[1]>a[1])selD.add(o.id)});hl()}});
 $('dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:'application/json'}));a.download='seating-chart.json';a.click()};
 $('ul').onclick=()=>$('file').click();
 $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.classes)throw 0;
@@ -163,7 +179,7 @@ $('lblps').onchange=draw;$('src').onchange=e=>{srcSel=e.target.value};$('flip').
 const setZ=v=>{Z=v;document.documentElement.style.setProperty('--z',v);$('zm').value=v};
 $('zm').oninput=e=>setZ(+e.target.value);
 function fitZ(){const l=L();if(!l||!l.desks.length)return;const pr=document.body.classList.contains('present'),w=pr?innerWidth:$('wrap').clientWidth,h=pr?innerHeight:$('wrap').clientHeight,
- mx=Math.max(...l.desks.map(d=>d.x+d.n*W))+30,my=Math.max(...l.desks.map(d=>d.y+H))+30;setZ(Math.min(3,Math.max(.3,Math.min(w/mx,h/my))))}
+ mx=Math.max(...l.desks.map(d=>d.x+dsz(d)[0]))+40,my=Math.max(...l.desks.map(d=>d.y+dsz(d)[1]))+40;setZ(Math.min(3,Math.max(.3,Math.min(w/mx,h/my))))}
 $('fit').onclick=fitZ;
 let oldZ=1;
 $('pres').onclick=()=>{if(!C())return;oldZ=Z;sel=null;document.body.classList.add('present');draw();fitZ();if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{})};
@@ -177,5 +193,9 @@ $('autow').onclick=()=>{const c=C();if(!c)return;const x=document.createElement(
  let m=0;c.students.forEach(t=>m=Math.max(m,x.measureText(disp(t)+($('showpri').checked?' ★':'')).width));setW(Math.min(400,Math.max(90,Math.ceil((m+26)/10)*10)))};
 $('adds').onclick=()=>{const c=C();if(!c)return;const n=prompt('New student name (format follows the "Names as" setting):');if(!n||!n.trim())return;
  c.students.push({id:uid(),...parseName(n.trim(),$('nfmt').value),pri:false,apart:[]});fit();save();draw()};
+$('selall').onclick=()=>{const l=L();if(!l)return;selD=new Set(l.desks.map(d=>d.id));hl()};
+$('delsel').onclick=()=>{const l=L();if(!l||!selD.size)return msg('Select tables first (Edit desks on, drag on empty space).');l.desks=l.desks.filter(d=>!selD.has(d.id));selD.forEach(id=>delete l.assign[id]);selD=new Set();save();draw()};
+$('rot').onclick=()=>{const l=L();if(!l)return;if(!selD.size)return msg('Select tables first (Edit desks on, drag on empty space).');const a=+$('deg').value||0;l.desks.forEach(d=>{if(selD.has(d.id))d.r=(((d.r||0)+a)%360+360)%360});save();draw()};
+$('rot0').onclick=()=>{const l=L();if(!l||!selD.size)return msg('Select tables first.');l.desks.forEach(d=>{if(selD.has(d.id))d.r=0});save();draw()};
 draw();
 </script></body></html>
